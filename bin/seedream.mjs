@@ -23,6 +23,7 @@ import { runSeedream } from '../lib/tools.js'
 import { SeedreamError } from '../lib/errors.js'
 import { buildUsageView, recostLedger, renderUsage } from '../lib/usage.js'
 import { buildBalanceView, renderBalanceView } from '../lib/balance.js'
+import { buildModelChoiceView, clearModelChoice, writeModelChoice } from '../lib/model-choice.js'
 import { describePriceTable, formatMoney, loadPrices, priceFilePathOf, readPriceFile, writePriceFile } from '../lib/pricing.js'
 import { ledgerPathOf } from '../lib/ledger.js'
 
@@ -68,6 +69,7 @@ const USAGE = `seedream CLI
   usage [--period today|week|month|all] [--detail]
                                              用量与费用统计（金额按本地价表估算）
   balance [--refresh]                        可用余额：官方（需 AK/SK）优先，本地预算兜底
+  model [--tier TIER | --clear]              查看/设置对话窗口的默认出图档位
   price show                                 查看生效价表与来源
   price set --tier TIER --price N [--high N] [--threshold N] [--currency CNY] [--note "..."]
                                              写入单价（元/张），--high 为超过阈值像素的高价档，
@@ -203,6 +205,25 @@ async function commandGenerate(config, flags) {
   for (const note of value.notes) console.log(`  提示：${note}`)
 }
 
+async function commandModel(config, flags, rest = []) {
+  const action = rest.find((token) => !token.startsWith('--'))
+  if (typeof flags.tier === 'string' || action === 'set') {
+    const tier = typeof flags.tier === 'string' ? flags.tier : String(rest[rest.indexOf('set') + 1] ?? '')
+    const result = await writeModelChoice(config, tier)
+    console.log(`已把界面档位设为 ${result.tier}（${result.path}）`)
+    return
+  }
+  if (action === 'clear') {
+    await clearModelChoice(config)
+    console.log('已清除界面档位选择，回到插件配置默认')
+    return
+  }
+  const view = await buildModelChoiceView({ config, fallback: config.defaultModel })
+  console.log(`当前生效档位：${view.tier}（来源：${view.sourceLabel}）`)
+  console.log(`界面选择：${view.selectedTier ?? '（未选择，跟随配置）'}`)
+  console.log(`文件：${view.file}`)
+}
+
 async function commandBalance(config, flags) {
   const view = await buildBalanceView({ config, refresh: flags.refresh === true })
   console.log(renderBalanceView(view))
@@ -306,6 +327,9 @@ async function main() {
       return
     case 'usage':
       await commandUsage(config, flags, rest)
+      return
+    case 'model':
+      await commandModel(config, flags, rest)
       return
     case 'balance':
       await commandBalance(config, flags)

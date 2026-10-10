@@ -11,7 +11,7 @@ import { EventEmitter } from 'node:events'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DEFAULTS, resolveConfig } from '../lib/config.js'
-import { TIER_KEYS, normalizeSize, resolveTier } from '../lib/models.js'
+import { TIER_KEYS, normalizeSize, normalizeTierName, resolveTier } from '../lib/models.js'
 import { readDimensions, planOutputPaths, resolveReference, slugify, sniffMediaType, toDataUrl } from '../lib/assets.js'
 import { clearVault, ensureKeyHint, getSecret, keyHint, setSecret, vaultStatus } from '../lib/vault.js'
 import { registerTools } from '../lib/tools.js'
@@ -22,7 +22,9 @@ import { buildUsageView, recostLedger, renderUsage } from '../lib/usage.js'
 import { buildUiState, registerClientUi, registerIndexInjection, ROUTE_PREFIX } from '../lib/ui.js'
 import { canonicalQueryString, extractBalance, formatXDate, signRequest } from '../lib/billing.js'
 import { computeBudget, resetBalanceCache } from '../lib/balance.js'
+import { readModelChoice, resolveEffectiveTier, writeModelChoice } from '../lib/model-choice.js'
 import { billingStatus, billingVaultPathOf, clearBillingCredentials, queryBalance, resolveBillingCredentials, setBillingCredentials } from '../lib/billing.js'
+import { setSecret as setSecretForHintTest } from '../lib/vault.js'
 
 let passed = 0
 let failed = 0
@@ -154,10 +156,15 @@ async function main() {
 
   // —— 档位与画幅 ——
   const pro = resolveTier('5.0-pro', config.models, '5.0-pro')
-  const lite = resolveTier('5.0', config.models, '5.0-pro')
+  const lite = resolveTier('5.0-flash', config.models, '5.0-pro')
   check('档位解析：默认 ID', pro.modelId === 'doubao-seedream-5-0-pro-260628', pro.modelId)
-  check('档位解析：覆盖 ID', resolveTier('5.0', { '5.0': 'ep-abc' }, '5.0-pro').modelId === 'ep-abc')
+  check('档位解析：覆盖 ID', resolveTier('5.0-flash', { '5.0-flash': 'ep-abc' }, '5.0-pro').modelId === 'ep-abc')
   checkThrows('档位解析：未知档位', () => resolveTier('4.5', config.models, '5.0-pro'), 'INVALID_ARGUMENT')
+  // 历史别名：早期版本把 flash 档叫 `5.0`，台账 / 配置 / 选择文件里可能还留着
+  check('档位解析：历史别名 5.0 → 5.0-flash', normalizeTierName('5.0') === '5.0-flash', normalizeTierName('5.0'))
+  check('档位解析：别名能解析出同一 Model ID', resolveTier('5.0', config.models, '5.0-pro').modelId === config.models['5.0-flash'])
+  check('档位解析：现行名称原样返回', normalizeTierName('5.0-pro') === '5.0-pro' && normalizeTierName('5.0-flash') === '5.0-flash')
+  check('档位：枚举顺序 pro 在前', TIER_KEYS.join(',') === '5.0-pro,5.0-flash', TIER_KEYS.join(','))
   check('画幅：缺省 2K', normalizeSize(undefined, pro.tier).value === '2K')
   check('画幅：小写档位归一', normalizeSize('4k', lite.tier).value === '4K')
   checkThrows('画幅：lite 不支持 1K', () => normalizeSize('1K', lite.tier), 'INVALID_ARGUMENT')
@@ -258,7 +265,7 @@ async function main() {
     priceTable: ['5.0-pro: ¥0.32/张，超过 2610000 像素 ¥0.95/张'],
     tiers: [
       {
-        tier: '5.0',
+        tier: '5.0-flash',
         alias: 'Seedream 5.0',
         modelId: 'doubao-seedream-5-0-260128',
         presets: ['2K', '3K', '4K'],
@@ -301,9 +308,9 @@ async function main() {
   const ledgerPath = ledgerPathOf(pricedConfig)
   // 模拟「填价之前」记录的两条：金额为空、unpriced=1，正是 recost 要补齐的形态。
   const proModelId = pricedConfig.models['5.0-pro']
-  const flashModelId = pricedConfig.models['5.0']
+  const flashModelId = pricedConfig.models['5.0-flash']
   await appendUsage({ ts: new Date().toISOString(), mode: 'generate', tier: '5.0-pro', model: proModelId, size: '1024x1024', images: [{ width: 1024, height: 1024, bytes: 1 }], billed: 1, outputTokens: 4096, currency: 'CNY', cost: null, unitPrices: [null], priced: 0, unpriced: 1 }, ledgerPath)
-  await appendUsage({ ts: new Date(Date.now() - 8 * 86_400_000).toISOString(), mode: 'generate', tier: '5.0', model: flashModelId, size: '2048x2048', images: [{ width: 2048, height: 2048, bytes: 1 }], billed: 1, outputTokens: 4096, currency: 'CNY', cost: null, unitPrices: [null], priced: 0, unpriced: 1 }, ledgerPath)
+  await appendUsage({ ts: new Date(Date.now() - 8 * 86_400_000).toISOString(), mode: 'generate', tier: '5.0-flash', model: flashModelId, size: '2048x2048', images: [{ width: 2048, height: 2048, bytes: 1 }], billed: 1, outputTokens: 4096, currency: 'CNY', cost: null, unitPrices: [null], priced: 0, unpriced: 1 }, ledgerPath)
   const ledger = await readUsage(ledgerPath)
   check('台账：读到两条', ledger.entries.length === 2 && ledger.skipped === 0, JSON.stringify(ledger.skipped))
   const todaySummary = summarizeUsage(ledger.entries, 'today')
@@ -344,6 +351,7 @@ async function main() {
     // 余额相关也必须落在临时目录：否则测试会写进用户的真实 DSH_HOME
     billingVaultPath: join(workspace, 'ui-vault', 'billing.vault.json'),
     budgetFilePath: join(workspace, 'ui-budget.json'),
+    modelChoicePath: join(workspace, 'ui-model.json'),
     budgetTotal: 200,
     price5Pro: 0.4,
   })
@@ -361,7 +369,7 @@ async function main() {
     logger: { info() {}, warn() {} },
   }
   registerClientUi(uiCtx, uiConfig, () => {})
-  check('界面：注册 8 条路由', registered.length === 8, registered.map((definition) => definition.path).join(','))
+  check('界面：注册 9 条路由', registered.length === 9, registered.map((definition) => definition.path).join(','))
   check('界面：路由都在插件前缀下', registered.every((definition) => definition.path.startsWith(ROUTE_PREFIX) && definition.kind === 'exact'))
   check('界面：路由不含契约外的 method 字段', registered.every((definition) => definition.method === undefined), JSON.stringify(Object.keys(registered[0] ?? {})))
 
@@ -406,12 +414,12 @@ async function main() {
   const emptyKey = await call(`${ROUTE_PREFIX}/key`, { method: 'POST', body: JSON.stringify({ value: '   ' }) })
   check('界面：空 Key 被拒', emptyKey.statusCode === 400 && JSON.parse(emptyKey.body).code === 'INVALID_ARGUMENT', emptyKey.body.slice(0, 80))
 
-  const priceWrite = await call(`${ROUTE_PREFIX}/price`, { method: 'POST', body: JSON.stringify({ tier: '5.0', price: 0.18, note: '界面写入测试' }) })
+  const priceWrite = await call(`${ROUTE_PREFIX}/price`, { method: 'POST', body: JSON.stringify({ tier: '5.0-flash', price: 0.18, note: '界面写入测试' }) })
   check('界面：写入单价', priceWrite.statusCode === 200 && JSON.parse(priceWrite.body).ok === true, priceWrite.body.slice(0, 120))
   const pricedState = JSON.parse((await call(`${ROUTE_PREFIX}/state`)).body)
-  const flashEntry = pricedState.prices.entries.find((entry) => entry.tier === '5.0')
+  const flashEntry = pricedState.prices.entries.find((entry) => entry.tier === '5.0-flash')
   check('界面：单价写入后状态同步', flashEntry.price === 0.18 && pricedState.prices.note === '界面写入测试', JSON.stringify(flashEntry))
-  const badPrice = await call(`${ROUTE_PREFIX}/price`, { method: 'POST', body: JSON.stringify({ tier: '5.0', price: -1 }) })
+  const badPrice = await call(`${ROUTE_PREFIX}/price`, { method: 'POST', body: JSON.stringify({ tier: '5.0-flash', price: -1 }) })
   check('界面：非法单价被拒', badPrice.statusCode === 400, String(badPrice.statusCode))
 
   const recostResponse = await call(`${ROUTE_PREFIX}/recost`, { method: 'POST', body: '{}' })
@@ -483,6 +491,66 @@ async function main() {
   const hintOffState = await buildUiState({ config: hintOffConfig, ctx: uiCtx })
   check('界面：uiKeyHint=false 时不返回指纹', hintOffState.key.hint === null && hintOffState.key.hintEnabled === false, JSON.stringify(hintOffState.key.hint))
 
+  // ================= 对话窗口的模型选择器 =================
+
+  // —— 1. 优先级：工具显式传参 > 界面选择 > 配置默认 ——
+  check('档位：未选择时用配置默认', resolveEffectiveTier({ config: uiConfig, requested: '', fallback: '5.0-pro' }).tier === '5.0-pro')
+  check(
+    '档位：界面选择优先于配置默认',
+    resolveEffectiveTier({ config: uiConfig, requested: '', fallback: '5.0-pro', choice: { tier: '5.0-flash' } }).source === 'ui' &&
+      resolveEffectiveTier({ config: uiConfig, requested: '', fallback: '5.0-pro', choice: { tier: '5.0-flash' } }).tier === '5.0-flash',
+  )
+  check(
+    '档位：显式传参优先于界面选择',
+    resolveEffectiveTier({ config: uiConfig, requested: '5.0-pro', fallback: '5.0-pro', choice: { tier: '5.0-flash' } }).source === 'request',
+  )
+
+  // —— 2. 选择文件的读写与清除 ——
+  await writeModelChoice(uiConfig, '5.0-flash')
+  check('档位：写入后读回一致', (await readModelChoice(uiConfig))?.tier === '5.0-flash')
+  await checkRejects('档位：拒绝未知档位', () => writeModelChoice(uiConfig, '4.5'), 'INVALID_ARGUMENT')
+  const modelState = JSON.parse((await call(`${ROUTE_PREFIX}/state`)).body)
+  check('档位：状态里带选择与来源', modelState.modelChoice.tier === '5.0-flash' && modelState.modelChoice.source === 'ui', JSON.stringify(modelState.modelChoice))
+  check('档位：状态带选择器开关', modelState.ui.modelPicker === true, JSON.stringify(modelState.ui))
+  const modelRoute = await call(`${ROUTE_PREFIX}/model`, { method: 'POST', body: JSON.stringify({ tier: '5.0-pro' }) })
+  check('档位路由：可切换档位', modelRoute.statusCode === 200 && JSON.parse(modelRoute.body).tier === '5.0-pro', modelRoute.body.slice(0, 120))
+  const badModelRoute = await call(`${ROUTE_PREFIX}/model`, { method: 'POST', body: JSON.stringify({ tier: '4.0' }) })
+  check('档位路由：非法档位被拒', badModelRoute.statusCode === 400, String(badModelRoute.statusCode))
+  const modelClearRoute = await call(`${ROUTE_PREFIX}/model`, { method: 'POST', body: JSON.stringify({ clear: true }) })
+  check('档位路由：可恢复默认', modelClearRoute.statusCode === 200 && JSON.parse(modelClearRoute.body).selectedTier === null, modelClearRoute.body.slice(0, 120))
+
+  // —— 3. 界面文案与选项（客户端按 state 组装，这里验证 state 提供的原料）——
+  const pickerTiers = modelState.tiers.map((tier) => tier.tier)
+  check('档位：state.tiers 提供选择项', pickerTiers.length === TIER_KEYS.length && pickerTiers.every((tier) => TIER_KEYS.includes(tier)), JSON.stringify(pickerTiers))
+  check(
+    '档位：state.prices 提供单价（用于选项文案）',
+    Array.isArray(modelState.prices.entries) && modelState.prices.entries.some((entry) => typeof entry.price === 'number'),
+    JSON.stringify(modelState.prices.entries),
+  )
+
+  // —— 4. 生成的 note 会说明档位来自界面 ——（用 runSeedream 的解析路径单独验证，避免联网）
+  const resolvedFromUi = resolveEffectiveTier({ config: uiConfig, requested: '', fallback: '5.0-pro', choice: { tier: '5.0-flash' } })
+  check('档位：来自界面时会被标注', resolvedFromUi.source === 'ui')
+
+  // —— 5. 历史档位名的归一（台账 / 选择文件）——
+  const legacySummary = summarizeUsage(
+    [
+      { ts: new Date().toISOString(), tier: '5.0', cost: 1, billed: 1, unpriced: 0 },
+      { ts: new Date().toISOString(), tier: '5.0-flash', cost: 2, billed: 1, unpriced: 0 },
+    ],
+    'all',
+  )
+  check(
+    '台账：历史档位名归一到 5.0-flash',
+    legacySummary.byTier.length === 1 && legacySummary.byTier[0].tier === '5.0-flash' && legacySummary.byTier[0].images === 2,
+    JSON.stringify(legacySummary.byTier.map((bucket) => ({ tier: bucket.tier, images: bucket.images }))),
+  )
+  await writeFile(join(workspace, 'legacy-model.json'), JSON.stringify({ tier: '5.0' }), 'utf8')
+  const legacyChoiceConfig = resolveConfig({ modelChoicePath: join(workspace, 'legacy-model.json') })
+  check('档位文件：历史档位名读取时归一', (await readModelChoice(legacyChoiceConfig))?.tier === '5.0-flash')
+  await writeModelChoice(legacyChoiceConfig, '5.0')
+  check('档位文件：写入历史别名也归一', (await readModelChoice(legacyChoiceConfig))?.tier === '5.0-flash')
+
   // ================= 可用余额 =================
 
   // —— 1. 签名：与官方 Python 实现（test/signv4_reference.py）交叉验证过的固定向量 ——
@@ -553,6 +621,18 @@ async function main() {
     check('费用中心凭据：状态为已配置', billingState.configured === true && billingState.hint !== null)
     await clearBillingCredentials({ config: billingConfig })
     check('费用中心凭据：清除后回到未配置', (await billingStatus({ config: billingConfig })).configured === false)
+
+    // 旧指纹（对整段 JSON 取哈希，显示成 `{"ac…=="}`）会被修正为「AK 掩码 + SK 长度」
+    const legacyConfig = resolveConfig({ billingVaultPath: join(workspace, 'legacy-vault', 'billing.vault.json') })
+    await setSecretForHintTest(JSON.stringify({ accessKey: 'AKLEGACY0001', secretKey: 'SKLEGACY0001' }), { path: billingVaultPathOf(legacyConfig) })
+    const legacyHint = (await billingStatus({ config: legacyConfig })).hint
+    check('费用中心凭据：旧指纹被修正为 AK 掩码', legacyHint?.kind === 'billing-ak-sk' && legacyHint.accessKey === 'AKLE…0001', JSON.stringify(legacyHint))
+    check('费用中心凭据：修正指纹后仍可解密', (await resolveBillingCredentials({ config: legacyConfig }))?.accessKey === 'AKLEGACY0001')
+
+    // setSecret 支持自定义指纹（避免把 JSON 结构写进指纹）
+    const customVault = join(workspace, 'custom-vault', 'v.json')
+    await setSecretForHintTest('{"a":1}', { path: customVault, hint: { kind: 'custom', label: 'x' } })
+    check('金库：支持自定义指纹', JSON.parse(await readFile(customVault, 'utf8')).hint.kind === 'custom')
   } catch (error) {
     if (error instanceof SeedreamError && error.code === 'POWERSHELL_MISSING') {
       console.log('跳过费用中心凭据测试：本机没有可用的 PowerShell（见 lib/vault.js）')

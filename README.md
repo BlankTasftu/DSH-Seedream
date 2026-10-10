@@ -9,6 +9,7 @@ Agent 会自己调用它出图；你也可以在 DSH 界面左下角看到一个
 ```
 
 - **五个 Agent 工具**：`seedream_generate`（文生图）、`seedream_edit`（按指令改造已有图）、`seedream_status`（接入自检）、`seedream_usage`（用量与费用）、`seedream_balance`（可用余额）
+- **对话窗口的模型选择器**：就嵌在输入框那一行，和**权限、模型选择**控件排在一起 —— 直接选 `5.0-pro` / `5.0-flash`（带单价），选中即成为后续出图的**默认档位**；对话里明确要求某档位时以要求为准
 - **实时计费**：每次生成回显计费张数与金额；按今天 / 近 7 天 / 本月 / 全部 汇总，可按档位分解
 - **可用余额**：配了费用中心 AK/SK 就显示**官方可用余额**（10 分钟缓存，可手动刷新）；没配就用**本地预算**（已充值 − 台账累计 + 日均消耗估算）
 - **图形化管理**：界面内改/删 API Key（写入 DPAPI 金库）、编辑单价、按新价重算历史、管理 AK/SK 与预算
@@ -85,7 +86,7 @@ Invoke-WebRequest http://127.0.0.1:19387/dsh-seedream/state -UseBasicParsing | S
 | 档位 | Model ID | 画幅 | 参考图 | 一次多张 |
 | --- | --- | --- | --- | --- |
 | `5.0-pro` | `doubao-seedream-5-0-pro-260628` | `1K` `2K`；显式 1280x720–2048x2048（边长 16 的倍数） | ≤10 | 不支持（串行多次调用） |
-| `5.0` | `doubao-seedream-5-0-flash-260915` | `2K` `3K` `4K`；显式 2560x1440–4096x4096 | ≤14 | 不支持（串行多次调用） |
+| `5.0-flash` | `doubao-seedream-5-0-flash-260915` | `2K` `3K` `4K`；显式 2560x1440–4096x4096 | ≤14 | 不支持（串行多次调用） |
 
 ```bash
 node bin/seedream.mjs probe                       # 不计费：探测模型是否可达
@@ -135,7 +136,7 @@ node bin/seedream.mjs key clear       # 删除金库
 | 参数 | 说明 |
 | --- | --- |
 | `prompt` | 必填。中文 ≤300 字 / 英文 ≤600 词；写清主体、动作、环境、风格、光线、构图、用途 |
-| `model` | `5.0` / `5.0-pro`，默认 `5.0-pro` |
+| `model` | `5.0-pro` / `5.0-flash`，默认 `5.0-pro`（`5.0` 为历史别名，仍可用） |
 | `size` | 档位（`1K/2K/3K/4K`）或显式 `宽x高`；越界会按档位能力等比钳制并提示 |
 | `count` | 1–4，串行多次调用（两个档位都不支持一次请求出多张） |
 | `references` | 参考图：工作目录内路径或公网 URL |
@@ -152,7 +153,8 @@ node bin/seedream.mjs key clear       # 删除金库
 ```bash
 node bin/seedream.mjs models                      # 档位与能力
 node bin/seedream.mjs probe [--live] [--model-id <id>]
-node bin/seedream.mjs generate --prompt "一只猫" --model 5.0 --size 2K --count 2
+node bin/seedream.mjs generate --prompt "一只猫" --model 5.0-flash --size 2K --count 2
+node bin/seedream.mjs model [--tier 5.0-flash | --clear]  # 查看/设置默认出图档位
 node bin/seedream.mjs usage [--period today|week|month|all] [--detail]
 node bin/seedream.mjs usage recost [--dry-run]    # 按当前价表重算历史（自动留 .bak）
 node bin/seedream.mjs price show
@@ -218,9 +220,19 @@ Agent 侧直接问「我还有多少余额」即可（会调 `seedream_balance`�
 
 ## 8. 客户端界面
 
-**左下角徽标**：实时显示今日张数与金额，5 秒轮询 + 窗口回焦立即刷新；未配置 Key 时变成 `⚠️`。
+**对话窗口的模型选择器**：**嵌在输入框的控制行里**，与 DSH 自带的**权限、模型选择**控件同一排 —— `🎨 [5.0-pro ¥0.32/张 ▾]`。
 
-**点击展开管理面板**：
+- 选项来自插件的档位表（`5.0-pro` / `5.0-flash`），价表已配置时直接显示单价；第一项「默认 5.0-pro」用于恢复默认。
+- 选中后写入 `<DSH_HOME>/seedream/model.json`，**不需要重启**；`已选定` 提示当前是否由界面选择生效。
+- 生效优先级：**工具显式传参 > 界面选择 > 插件配置默认** —— 所以对话里说「用 5.0-flash 出这张」仍然能覆盖选择器。
+- 嵌入点是**运行时按 `data-composer-card` + 类名后缀**找到的控制行（优先「模型选择」那一组，其次「权限」那一行），插在**该行最前面 —— 也就是模型选择左侧**；DSH 换版也不会失联，React 重渲染把节点挤掉后会自动重新插入；实在找不到控制行时回退为「浮在输入框上方」。
+- **不改动 DSH 输入框原有布局**：不覆盖行间距（`gap`）等任何布局规则；只把自己的 `select` 宽度收敛到「当前档位名 + 原生箭头」——原生 `select` 默认按**最长选项**撑宽、会把箭头推到很右边，收敛后箭头紧贴文字。
+- 可用参数 `uiModelPicker: false` 关闭；CLI 也可查看/设置：`node bin/seedream.mjs model [--tier 5.0-flash | --clear]`。
+
+**左下角徽标**：实时显示今日张数与金额，5 秒轮询 + 窗口回焦立即刷新；未配置 Key 时变成 `⚠️`。
+有官方余额时徽标右侧直接显示「余额 ¥x」。
+
+**点击徽标展开管理面板**：
 
 | 区块 | 能力 |
 | --- | --- |
@@ -267,6 +279,8 @@ Agent 侧直接问「我还有多少余额」即可（会调 `seedream_balance`�
 | `billingTimeoutMs` / `billingCacheSeconds` | `15000` / `600` | 余额查询超时 / 缓存秒数 |
 | `budgetTotal` / `budgetSince` | `0` / `''` | 本地预算：已充值（元）与起始日期（**优先级高于界面的 budget.json**） |
 | `budgetFilePath` | `''` | 预算文件路径，留空用 `<DSH_HOME>/seedream/budget.json` |
+| `uiModelPicker` | `true` | 是否在对话窗口（输入框上方）显示档位选择器 |
+| `modelChoicePath` | `''` | 档位选择文件路径，留空用 `<DSH_HOME>/seedream/model.json` |
 
 ## 10. 故障排查
 
@@ -301,10 +315,11 @@ AK/SK 比方舟 API Key 权限更大（属于账号级访问密钥）：请务�
 ## 12. 开发
 
 ```bash
-node test/offline.mjs   # 161 项离线自检：不联网、不花钱
+node test/offline.mjs   # 185 项离线自检：不联网、不花钱
                         # 配置/档位/画幅钳制/路径逃逸/图片嗅探/工具 schema 与渲染/
                         # 价表分档/台账汇总/recost/界面路由与信任栅栏/指纹与擦除/DPAPI 金库往返/
-                        # SigV4 签名（与官方实现交叉验证的固定向量）/余额解析/预算数学
+                        # SigV4 签名（与官方实现交叉验证的固定向量）/余额解析/预算数学/档位优先级与选择文件/历史档位名归一
+node test/client-dom.mjs # 16 项客户端 DOM 自检：用最小 DOM 桩验证「选择器嵌进控制行」与「切换档位会 POST /model」
 ```
 
 ```
@@ -318,6 +333,7 @@ lib/
 ├─ credentials.js 凭据解析顺序与状态
 ├─ billing.js     费用中心 OpenAPI：Volcengine SigV4 签名 + QueryBalanceAcct + AK/SK 金库
 ├─ balance.js     余额视图：官方优先 + 本地预算兜底 + 缓存/节流
+├─ model-choice.js 对话窗口档位选择：文件读写 + 生效优先级解析
 ├─ pricing.js     价表（基准/高清档、多来源合并、金额估算）
 ├─ ledger.js      用量台账 JSONL：追加、读取、周期汇总、渲染
 ├─ usage.js       用量视图组装 + 历史重新计价
@@ -326,6 +342,7 @@ lib/
 ├─ config.js / schema.js / errors.js
 bin/seedream.mjs  CLI
 test/offline.mjs  离线自检
+test/client-dom.mjs  客户端脚本的 DOM 行为自检（最小 DOM 桩，不需要浏览器）
 test/signv4_reference.py  官方签名算法参考实现（交叉验证用）
 cordis.patch.yml  bundle 挂载声明
 ```
@@ -334,7 +351,7 @@ cordis.patch.yml  bundle 挂载声明
 
 ## 13. 已知边界
 
-- 5.0 flash 的显式像素下限、参考图上限沿用方舟 5.0 系列文档口径，未逐一边界实测；被网关拒绝时会原样上报并按提示调整。
+- 5.0-flash 的显式像素下限、参考图上限沿用方舟 Seedream 5.0 系列文档口径，未逐一边界实测；被网关拒绝时会原样上报并按提示调整。
 - 方舟出图 URL 24 小时失效：插件收到响应即下载落盘，不等后续步骤。
 - 图片同时写入 DSH 附件库以便对话内回显；附件库会对超限图片做归一化，落盘原图保持全分辨率。
 - 费用是估算：官方单价以控制台为准；`usage recost` 可随时按新价表重算历史。

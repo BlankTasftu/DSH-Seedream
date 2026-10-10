@@ -23,7 +23,7 @@
         # apiKeyEnv: ARK_API_KEY
         # vaultPath: ''
         # baseUrl: https://ark.cn-beijing.volces.com/api/v3
-        # model5: doubao-seedream-5-0-flash-260915
+        # model5Flash: doubao-seedream-5-0-flash-260915  # 旧键 model5 兼容
         # model5Pro: doubao-seedream-5-0-pro-260628
         # requestTimeoutMs: 300000
         # rateLimitRetries: 2
@@ -35,8 +35,8 @@
         # ledgerPath: ''                 # 用量台账，留空用 <DSH_HOME>/seedream/usage.jsonl
         # priceFilePath: ''              # 价格文件，留空用 <DSH_HOME>/seedream/prices.json
         # priceCurrency: CNY
-        # price5: ''                     # 5.0 档单价（元/张），留空 = 未配置
-        # price5High: ''                 # 超过阈值像素的高价档
+        # price5Flash: ''                # 5.0-flash 档单价（元/张），留空 = 未配置（旧键 price5 兼容）
+        # price5FlashHigh: ''            # 5.0-flash 高清单价（旧键 price5High 兼容）
         # price5Pro: ''
         # price5ProHigh: ''
         # priceHighPixelThreshold: 2610000
@@ -52,3 +52,6 @@
         # budgetTotal: 0                 # 本地预算：已充值（元），0 = 未设置
         # budgetSince: ''                # 本地预算起始日期（ISO，留空 = 全部台账）
         # budgetFilePath: ''             # 预算文件，留空用 <DSH_HOME>/seedream/budget.json
+        # --- 对话窗口的模型选择器 ---
+        # uiModelPicker: true            # 是否在输入框控制行显示档位选择器（与模型/权限同排）
+        # modelChoicePath: ''            # 档位选择文件，留空用 <DSH_HOME>/seedream/model.json

@@ -73,7 +73,7 @@ CLI:
 ```bash
 node bin/seedream.mjs models
 node bin/seedream.mjs probe [--live] [--tier 5.0-pro]
-node bin/seedream.mjs generate --prompt "a cat" --model 5.0 --size 2K
+node bin/seedream.mjs generate --prompt "a cat" --model 5.0-flash --size 2K
 node bin/seedream.mjs usage --period month --detail
 node bin/seedream.mjs usage recost
 node bin/seedream.mjs price set --tier 5.0-pro --price 0.32 --high 0.95 --note "Ark console"
@@ -84,7 +84,7 @@ node bin/seedream.mjs price set --tier 5.0-pro --price 0.32 --high 0.95 --note "
 | Tier | Model ID | Sizes | References | Multi-image |
 | --- | --- | --- | --- | --- |
 | `5.0-pro` | `doubao-seedream-5-0-pro-260628` | `1K` `2K`; explicit 1280x720–2048x2048 (multiples of 16) | ≤10 | serial calls |
-| `5.0` | `doubao-seedream-5-0-flash-260915` | `2K` `3K` `4K`; explicit 2560x1440–4096x4096 | ≤14 | serial calls |
+| `5.0-flash` | `doubao-seedream-5-0-flash-260915` | `2K` `3K` `4K`; explicit 2560x1440–4096x4096 | ≤14 | serial calls |
 
 Both tiers reject `sequential_image_generation`, so `count > 1` becomes serial single calls.
 Ark's image API has **no** mask inpainting: edits are whole-image redraws driven by the instruction.
@@ -103,7 +103,8 @@ AK/SK are stored as DPAPI ciphertext, only the AK's first/last 4 chars are echoe
 ## Testing
 
 ```bash
-node test/offline.mjs   # 162 offline checks: no network, no billing
+node test/offline.mjs    # 185 offline checks: no network, no billing
+node test/client-dom.mjs # 16 DOM checks: model picker inline placement + POST /model
 ```
 
 ## License

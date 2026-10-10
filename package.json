@@ -1,7 +1,7 @@
 {
   "name": "dsh-seedream",
-  "version": "0.4.0",
-  "description": "DSH 的 Seedream（火山方舟 Ark）图片 / 图像素材生成插件：Agent 工具生成与编辑、用量费用统计、可用余额（费用中心官方余额 / 本地预算）、界面内实时计费徽标与 API 管理；API Key 与 AK/SK 均以 Windows DPAPI 密文保管，不落明文",
+  "version": "0.5.0",
+  "description": "DSH 的 Seedream（火山方舟 Ark）图片 / 图像素材生成插件：Agent 工具生成与编辑、用量费用统计、可用余额（费用中心官方余额 / 本地预算）、对话窗口模型选择器、界面内实时计费徽标与 API 管理；API Key 与 AK/SK 均以 Windows DPAPI 密文保管，不落明文",
   "keywords": [
     "dsh",
     "dsh-plugin",

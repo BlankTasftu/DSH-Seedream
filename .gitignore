@@ -2,7 +2,7 @@
 node_modules/
 *.log
 
-# —— 绝不提交任何密钥/用量/价表/产出 ——
+# —— 绝不提交任何密钥/用量/价表/预算/产出 ——
 *.vault.json
 *.vault.json.tmp
 *.vault.json.bak
@@ -10,6 +10,10 @@ usage.jsonl
 usage.jsonl.bak
 prices.json
 prices.json.tmp
+budget.json
+budget.json.tmp
+model.json
+model.json.tmp
 images/
 *.png
 *.jpg
