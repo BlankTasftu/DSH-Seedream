@@ -8,10 +8,11 @@ Agent 会自己调用它出图；你也可以在 DSH 界面左下角看到一个
 🎨 今天 12 张 · ¥3.73   共 19 张        ← 界面常驻徽标（实时）
 ```
 
-- **四个 Agent 工具**：`seedream_generate`（文生图）、`seedream_edit`（按指令改造已有图）、`seedream_status`（接入自检）、`seedream_usage`（用量与费用）
+- **五个 Agent 工具**：`seedream_generate`（文生图）、`seedream_edit`（按指令改造已有图）、`seedream_status`（接入自检）、`seedream_usage`（用量与费用）、`seedream_balance`（可用余额）
 - **实时计费**：每次生成回显计费张数与金额；按今天 / 近 7 天 / 本月 / 全部 汇总，可按档位分解
-- **图形化管理**：界面内改/删 API Key（写入 DPAPI 金库）、编辑单价、按新价重算历史
-- **密钥不落明文**：只存 Windows DPAPI 密文；界面任何响应都不含 Key 明文（细节见 [SECURITY.md](SECURITY.md)）
+- **可用余额**：配了费用中心 AK/SK 就显示**官方可用余额**（10 分钟缓存，可手动刷新）；没配就用**本地预算**（已充值 − 台账累计 + 日均消耗估算）
+- **图形化管理**：界面内改/删 API Key（写入 DPAPI 金库）、编辑单价、按新价重算历史、管理 AK/SK 与预算
+- **密钥不落明文**：API Key 与 AK/SK 都只存 Windows DPAPI 密文；界面任何响应都不含明文（细节见 [SECURITY.md](SECURITY.md)）
 - **零运行时依赖**：`@deepseek-ai/schemastery` 可选（装了就多一份配置面板 schema，不装照常用）
 
 > 计费口径提示：方舟图像模型**按返回张数计费**，但**单价只在控制台可见、API 不返回**。
@@ -172,7 +173,50 @@ node bin/seedream.mjs price clear
 - 也可在 profile 配置里写死单价：`price5` / `price5High` / `price5Pro` / `price5ProHigh` / `priceHighPixelThreshold` / `priceCurrency`
   （优先级：插件配置 > prices.json > 内置默认=未配置）
 
-## 7. 客户端界面
+## 7. 可用余额
+
+两种模式，**官方优先、本地兜底**（都不需要动 profile 配置）：
+
+| 模式 | 数据来源 | 前提 |
+| --- | --- | --- |
+| **官方余额**（推荐） | 火山引擎费用中心 OpenAPI `QueryBalanceAcct` | 需要子账号 **AK/SK**，建议只授予「费用中心只读」 |
+| **本地预算** | 「已充值总额 − 台账累计花费」+ 近 7 天日均 | 零凭据，纯本地账 |
+
+### 为什么不能直接用方舟 API Key
+
+实测方舟数据面（`ark.cn-beijing.volces.com/api/v3`）的 10 个候选余额/用量路径**全部 404**——
+余额属于费用中心 OpenAPI，必须用 AK/SK 做 Volcengine Signature V4（HMAC-SHA256）签名。
+插件的签名实现已与官方 Python SDK 的 `signv4.py` 做**固定向量交叉验证**（见 `test/signv4_reference.py`）。
+
+### 配置官方余额（最小权限）
+
+1. 火山引擎控制台 → **访问控制 IAM** → 新建**子用户**（不要用主账号 AK/SK）；
+2. 给它授予内置策略 **`BillingCenterReadOnlyAccess`**（费用中心只读，不含任何资源操作权限）；
+3. 为该子用户创建 **Access Key**，拿到 AK / SK；
+4. 回到 DSH：点左下角徽标 → **可用余额** → 填 AK / SK → 「保存并验证」。
+   插件会立刻查一次：成功就显示余额，失败会把原因（如权限不足）如实回显。
+
+AK/SK 与方舟 Key 一样：**DPAPI 密文落盘**（`<DSH_HOME>/seedream/billing.vault.json`）、
+界面只回显 AK 的首尾 4 位与 SK 的长度、**SK 任何字符都不显示**、不打印、不进日志。
+也支持环境变量 `VOLC_ACCESSKEY` / `VOLC_SECRETKEY`（明文，自行权衡）。
+
+### 本地预算
+
+界面里填「已充值」与可选起始日期即可（存 `<DSH_HOME>/seedream/budget.json`），
+插件会算：已花 / 剩余 / 近 7 天日均 / 预计可用天数。也可写进 profile 配置：
+`budgetTotal`（元）与 `budgetSince`（ISO 日期）——**注意配置优先级高于那个文件**，界面会提示。
+
+### 查看方式
+
+```bash
+node bin/seedream.mjs balance [--refresh]   # 命令行
+```
+
+Agent 侧直接问「我还有多少余额」即可（会调 `seedream_balance`）；
+`seedream_status` 也会带一行余额摘要。官方余额有 **10 分钟缓存**（`billingCacheSeconds`），
+手动刷新有 **30 秒节流**，所以界面 5 秒轮询不会把费用中心打爆。
+
+## 8. 客户端界面
 
 **左下角徽标**：实时显示今日张数与金额，5 秒轮询 + 窗口回焦立即刷新；未配置 Key 时变成 `⚠️`。
 
@@ -180,6 +224,7 @@ node bin/seedream.mjs price clear
 
 | 区块 | 能力 |
 | --- | --- |
+| 可用余额 | 官方余额（大字 + 明细 + 刷新）或本地预算剩余；AK/SK 的保存/验证/删除；预算设置 |
 | API Key 管理 | 当前 Key 卡片（来源 / 指纹 / 写入时间 / 金库路径）；**修改**＝粘贴新 Key 点「替换」；**删除**＝按来源单独删（DPAPI 金库 / DSH 凭据服务），带二次确认 |
 | 用量与费用 | 今天 / 近 7 天 / 本月 / 全部 的次数、张数、tokens、估算金额 |
 | 单价与重新计价 | 逐档位改价、记录价格来源、按当前价重算历史、清除价表 |
@@ -192,7 +237,7 @@ node bin/seedream.mjs price clear
 
 位置也可在配置里改：`uiBadgePosition: bottom-left | bottom-right | top-left | top-right`。
 
-## 8. 配置项
+## 9. 配置项
 
 写在 profile 的 `cordis.patch.yml` 中 `dsh-seedream` 条目的 `config:` 下（完整默认值见 `lib/schema.js`）：
 
@@ -217,8 +262,13 @@ node bin/seedream.mjs price clear
 | `priceCurrency` | `CNY` | 计价币种（仅展示） |
 | `uiBadgePosition` | `bottom-left` | 徽标初始角落 |
 | `uiKeyHint` | `true` | 是否显示 Key 指纹（不可逆）；`false` 只显示已配置/未配置 |
+| `billingVaultPath` | `''` | 费用中心 AK/SK 金库路径，留空用 `<DSH_HOME>/seedream/billing.vault.json` |
+| `billingRegion` / `billingHost` | `cn-north-1` / `billing.volcengineapi.com` | 费用中心 OpenAPI 地址（一般不用改） |
+| `billingTimeoutMs` / `billingCacheSeconds` | `15000` / `600` | 余额查询超时 / 缓存秒数 |
+| `budgetTotal` / `budgetSince` | `0` / `''` | 本地预算：已充值（元）与起始日期（**优先级高于界面的 budget.json**） |
+| `budgetFilePath` | `''` | 预算文件路径，留空用 `<DSH_HOME>/seedream/budget.json` |
 
-## 9. 故障排查
+## 10. 故障排查
 
 | 现象 | 原因与处理 |
 | --- | --- |
@@ -230,35 +280,44 @@ node bin/seedream.mjs price clear
 | `SENSITIVE_CONTENT` | 输入或输出被审核拦截 → 改写提示词（不重试） |
 | `TIMEOUT` | 同步接口耗时长 → 调大 `requestTimeoutMs`，或减少张数/参考图 |
 | `POWERSHELL_MISSING` | 找不到 pwsh → 安装 PowerShell 7，或配置 `powershellPath` |
+| 余额显示「未配置」 | 没填 AK/SK 也没设本地预算 → 见第 7 节 |
+| 余额要「费用中心只读」 | 余额用 AK/SK 单独鉴权；Key 本身不带权限，需给子用户授予 `BillingCenterReadOnlyAccess` |
+| 官方余额查询失败 `AUTH_FAILED` | AK/SK 无效，或该子用户没有费用中心只读权限 |
 | 界面没出现徽标 | 装完没重启 DSH；或用第 2 节的 `Invoke-WebRequest` 自检路由 |
 | 徽标挡到东西 | 直接拖动它（自动记忆）或双击复位，或改 `uiBadgePosition` |
 | 改了 `lib/client.js` 不生效 | 硬刷新页面（Ctrl+F5）；改宿主代码（工具/路由/注入行）需重启 DSH |
 
-## 10. 安全
+## 11. 安全
 
-摘要：**Key 只以 DPAPI 密文落盘；写入只走 stdin/环境变量或回环 HTTP；不打印、不回显、不进日志；
+摘要：**API Key 与 AK/SK 都只以 DPAPI 密文落盘；写入只走 stdin/环境变量或回环 HTTP；不打印、不回显、不进日志；
 界面 HTTP 面有三层信任栅栏（插件自校验 + 写操作限本机 + 委托宿主栅栏，异常即拒绝）；
 所有错误文本出口带 `ark-…` 形态兜底擦除。**
 
+AK/SK 比方舟 API Key 权限更大（属于账号级访问密钥）：请务必用**子用户 + 仅「费用中心只读」策略**，
+插件只把它用于 `QueryBalanceAcct`，界面只回显 AK 首尾 4 位与 SK 长度。
+
 完整威胁模型、审查记录与已知边界见 **[SECURITY.md](SECURITY.md)**。
 
-## 11. 开发
+## 12. 开发
 
 ```bash
-node test/offline.mjs   # 130 项离线自检：不联网、不花钱
+node test/offline.mjs   # 161 项离线自检：不联网、不花钱
                         # 配置/档位/画幅钳制/路径逃逸/图片嗅探/工具 schema 与渲染/
-                        # 价表分档/台账汇总/recost/界面路由与信任栅栏/指纹与擦除/DPAPI 金库往返
+                        # 价表分档/台账汇总/recost/界面路由与信任栅栏/指纹与擦除/DPAPI 金库往返/
+                        # SigV4 签名（与官方实现交叉验证的固定向量）/余额解析/预算数学
 ```
 
 ```
 lib/
 ├─ index.js       宿主入口：注入行 + 路由 + 工具 + 能力提示
-├─ tools.js       四个工具的 schema、渲染与执行管线
+├─ tools.js       五个工具的 schema、渲染与执行管线
 ├─ ark.js         方舟客户端：请求、429 退避、错误分类、下载
 ├─ models.js      档位能力矩阵与画幅归一
 ├─ assets.js      素材落盘、参考图读取、格式嗅探、路径逃逸防护
 ├─ vault.js       DPAPI 金库（加解密、指纹、权限收紧）
 ├─ credentials.js 凭据解析顺序与状态
+├─ billing.js     费用中心 OpenAPI：Volcengine SigV4 签名 + QueryBalanceAcct + AK/SK 金库
+├─ balance.js     余额视图：官方优先 + 本地预算兜底 + 缓存/节流
 ├─ pricing.js     价表（基准/高清档、多来源合并、金额估算）
 ├─ ledger.js      用量台账 JSONL：追加、读取、周期汇总、渲染
 ├─ usage.js       用量视图组装 + 历史重新计价
@@ -267,12 +326,13 @@ lib/
 ├─ config.js / schema.js / errors.js
 bin/seedream.mjs  CLI
 test/offline.mjs  离线自检
+test/signv4_reference.py  官方签名算法参考实现（交叉验证用）
 cordis.patch.yml  bundle 挂载声明
 ```
 
 **改动的生效方式**：CLI → 立即；`lib/client.js` → Ctrl+F5；宿主代码 / 注入行 → 重启 DSH。
 
-## 12. 已知边界
+## 13. 已知边界
 
 - 5.0 flash 的显式像素下限、参考图上限沿用方舟 5.0 系列文档口径，未逐一边界实测；被网关拒绝时会原样上报并按提示调整。
 - 方舟出图 URL 24 小时失效：插件收到响应即下载落盘，不等后续步骤。
@@ -281,7 +341,7 @@ cordis.patch.yml  bundle 挂载声明
 - 台账为无锁追加写：DSH 工具默认串行调度，正常使用不会冲突。
 - DPAPI 金库仅 Windows；其它平台请用环境变量或凭据服务（后者是明文存储）。
 
-## 13. License
+## 14. License
 
 [MIT](LICENSE) © 2026 BlankTasftu
 

@@ -42,3 +42,13 @@
         # priceHighPixelThreshold: 2610000
         # --- 客户端界面（实时计费徽标 + API/单价管理面板）---
         # uiBadgePosition: bottom-left   # bottom-left / bottom-right / top-left / top-right
+        # uiKeyHint: true                # 是否显示 Key 指纹（不可逆）
+        # --- 可用余额（官方余额需费用中心 AK/SK：建议子用户 + 「费用中心只读」）---
+        # billingVaultPath: ''           # AK/SK 金库，留空用 <DSH_HOME>/seedream/billing.vault.json
+        # billingRegion: cn-north-1
+        # billingHost: billing.volcengineapi.com
+        # billingTimeoutMs: 15000
+        # billingCacheSeconds: 600       # 余额缓存秒数（界面 5 秒轮询不会反复打费用中心）
+        # budgetTotal: 0                 # 本地预算：已充值（元），0 = 未设置
+        # budgetSince: ''                # 本地预算起始日期（ISO，留空 = 全部台账）
+        # budgetFilePath: ''             # 预算文件，留空用 <DSH_HOME>/seedream/budget.json

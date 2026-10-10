@@ -20,6 +20,9 @@ import { estimateCost, loadPrices, priceForImage } from '../lib/pricing.js'
 import { appendUsage, ledgerPathOf, readUsage, summarizeUsage } from '../lib/ledger.js'
 import { buildUsageView, recostLedger, renderUsage } from '../lib/usage.js'
 import { buildUiState, registerClientUi, registerIndexInjection, ROUTE_PREFIX } from '../lib/ui.js'
+import { canonicalQueryString, extractBalance, formatXDate, signRequest } from '../lib/billing.js'
+import { computeBudget, resetBalanceCache } from '../lib/balance.js'
+import { billingStatus, billingVaultPathOf, clearBillingCredentials, queryBalance, resolveBillingCredentials, setBillingCredentials } from '../lib/billing.js'
 
 let passed = 0
 let failed = 0
@@ -199,12 +202,13 @@ async function main() {
   const definitions = []
   const ctx = { get: () => undefined, tools: { register: (definition) => { definitions.push(definition); return () => {} } }, effect: () => {} }
   registerTools(ctx, config, () => {})
-  check('工具：注册四个', definitions.length === 4, definitions.map((d) => d.name).join(','))
+  check('工具：注册五个', definitions.length === 5, definitions.map((d) => d.name).join(','))
   const byName = Object.fromEntries(definitions.map((definition) => [definition.name, definition]))
   check('工具：generate 存在', byName.seedream_generate !== undefined)
   check('工具：edit 存在', byName.seedream_edit !== undefined)
   check('工具：status 存在', byName.seedream_status !== undefined)
   check('工具：usage 存在', byName.seedream_usage !== undefined)
+  check('工具：balance 存在', byName.seedream_balance !== undefined)
   for (const definition of definitions) {
     check(`工具 ${definition.name}：有输出 schema 与同步 render`, typeof definition.output?.render === 'function')
     check(`工具 ${definition.name}：params 是对象根`, definition.parameters?.type === 'object' && typeof definition.parameters.properties === 'object')
@@ -250,6 +254,7 @@ async function main() {
     outputDir: 'images/seedream',
     allowOutsideCwd: false,
     usage: '今天 2 张 / ¥0.64；累计 9 张 / ¥2.88',
+    balance: '本地预算剩余 45.95 CNY（已花 4.05/50）',
     priceTable: ['5.0-pro: ¥0.32/张，超过 2610000 像素 ¥0.95/张'],
     tiers: [
       {
@@ -336,6 +341,10 @@ async function main() {
     ledgerPath: join(workspace, 'ui-usage.jsonl'),
     priceFilePath: join(workspace, 'ui-prices.json'),
     vaultPath: join(workspace, 'ui-vault', 'ark-key.vault.json'),
+    // 余额相关也必须落在临时目录：否则测试会写进用户的真实 DSH_HOME
+    billingVaultPath: join(workspace, 'ui-vault', 'billing.vault.json'),
+    budgetFilePath: join(workspace, 'ui-budget.json'),
+    budgetTotal: 200,
     price5Pro: 0.4,
   })
   const registered = []
@@ -352,7 +361,7 @@ async function main() {
     logger: { info() {}, warn() {} },
   }
   registerClientUi(uiCtx, uiConfig, () => {})
-  check('界面：注册 5 条路由', registered.length === 5, registered.map((definition) => definition.path).join(','))
+  check('界面：注册 8 条路由', registered.length === 8, registered.map((definition) => definition.path).join(','))
   check('界面：路由都在插件前缀下', registered.every((definition) => definition.path.startsWith(ROUTE_PREFIX) && definition.kind === 'exact'))
   check('界面：路由不含契约外的 method 字段', registered.every((definition) => definition.method === undefined), JSON.stringify(Object.keys(registered[0] ?? {})))
 
@@ -473,6 +482,139 @@ async function main() {
   })
   const hintOffState = await buildUiState({ config: hintOffConfig, ctx: uiCtx })
   check('界面：uiKeyHint=false 时不返回指纹', hintOffState.key.hint === null && hintOffState.key.hintEnabled === false, JSON.stringify(hintOffState.key.hint))
+
+  // ================= 可用余额 =================
+
+  // —— 1. 签名：与官方 Python 实现（test/signv4_reference.py）交叉验证过的固定向量 ——
+  const signed = signRequest({
+    accessKey: 'AKTESTACCESSKEY0001',
+    secretKey: 'SKTESTSECRETKEY0001',
+    host: 'billing.volcengineapi.com',
+    path: '/',
+    method: 'POST',
+    query: { Action: 'QueryBalanceAcct', Version: '2022-01-01' },
+    body: '{}',
+    region: 'cn-north-1',
+    service: 'billing',
+    xDate: '20261010T080000Z',
+  })
+  const OFFICIAL_SIGNATURE = '7d0a5891cf672ab8283721fbbaa21944a31ce6496e846f9f992e5ca34344715c'
+  check('签名：与官方实现一致（固定向量）', signed.Authorization.includes(`Signature=${OFFICIAL_SIGNATURE}`), signed.Authorization)
+  check('签名：Credential 作用域正确', signed.Authorization.includes('Credential=AKTESTACCESSKEY0001/20261010/cn-north-1/billing/request'), signed.Authorization)
+  check('签名：参与头与官方一致', signed.Authorization.includes('SignedHeaders=content-type;host;x-content-sha256;x-date'), signed.Authorization)
+  check('签名：body 哈希正确', signed['X-Content-Sha256'] === '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a', signed['X-Content-Sha256'])
+  check('签名：X-Date 透传', signed['X-Date'] === '20261010T080000Z', signed['X-Date'])
+  check('签名：查询串按 key 排序', canonicalQueryString({ Version: '2022-01-01', Action: 'QueryBalanceAcct' }) === 'Action=QueryBalanceAcct&Version=2022-01-01')
+  check('签名：X-Date 格式为 UTC 紧凑写法', formatXDate(new Date('2026-10-10T08:00:00Z')) === '20261010T080000Z', formatXDate(new Date('2026-10-10T08:00:00Z')))
+
+  // —— 2. 响应解析 ——
+  const parsedBalance = extractBalance({ Result: { AvailableBalance: '12.34', CashBalance: '10.00', CreditLimit: '0' } })
+  check('余额解析：取到字段', parsedBalance.balance.AvailableBalance === '12.34' && parsedBalance.balance.CreditLimit === '0' && parsedBalance.error === undefined, JSON.stringify(parsedBalance))
+  const parsedError = extractBalance({ ResponseMetadata: { Error: { Code: 'AccessDenied', Message: 'no permission' } } })
+  check('余额解析：识别错误体', parsedError.error?.code === 'AccessDenied', JSON.stringify(parsedError.error))
+
+  // —— 3. 本地预算数学 ——
+  const budgetNow = new Date()
+  const budgetEntries = [
+    { ts: budgetNow.toISOString(), cost: 2, unpriced: 0 },
+    { ts: new Date(budgetNow.getTime() - 3 * 86_400_000).toISOString(), cost: 4, unpriced: 1 },
+    { ts: new Date(budgetNow.getTime() - 30 * 86_400_000).toISOString(), cost: 10, unpriced: 0 },
+  ]
+  const budgetCalc = computeBudget({ total: 100, currency: 'CNY', entries: budgetEntries, now: budgetNow })
+  check('预算：已花与剩余', budgetCalc.spent === 16 && budgetCalc.remaining === 84, JSON.stringify(budgetCalc))
+  check('预算：日均与可用天数', budgetCalc.dailyAverage > 0 && budgetCalc.daysLeft > 0, `${budgetCalc.dailyAverage} / ${budgetCalc.daysLeft}`)
+  check('预算：未计价张数累计', budgetCalc.unpricedImages === 1, String(budgetCalc.unpricedImages))
+  const budgetSince = computeBudget({
+    total: 100,
+    currency: 'CNY',
+    since: new Date(budgetNow.getTime() - 7 * 86_400_000).toISOString(),
+    entries: budgetEntries,
+    now: budgetNow,
+  })
+  check('预算：起始日期过滤掉更早的记录', budgetSince.spent === 6, JSON.stringify(budgetSince))
+  const budgetOverspent = computeBudget({ total: 3, currency: 'CNY', entries: budgetEntries, now: budgetNow })
+  check('预算：超额时剩余不为负', budgetOverspent.remaining === 0, String(budgetOverspent.remaining))
+
+  // —— 4. AK/SK 金库（需要 pwsh）——
+  const billingConfig = resolveConfig({
+    ledgerPath: join(workspace, 'ui-usage.jsonl'),
+    priceFilePath: join(workspace, 'ui-prices.json'),
+    billingVaultPath: join(workspace, 'billing-vault', 'billing.vault.json'),
+    budgetFilePath: join(workspace, 'billing-budget.json'),
+  })
+  try {
+    await setBillingCredentials('AKTESTOFFLINE0001', 'SKTESTOFFLINE0001', { config: billingConfig })
+    const billingRaw = await readFile(billingVaultPathOf(billingConfig), 'utf8')
+    check('费用中心凭据：金库内无 AK/SK 明文', !billingRaw.includes('AKTESTOFFLINE0001') && !billingRaw.includes('SKTESTOFFLINE0001'), billingRaw.slice(0, 60))
+    const resolved = await resolveBillingCredentials({ config: billingConfig })
+    check('费用中心凭据：可解密还原', resolved?.accessKey === 'AKTESTOFFLINE0001' && resolved?.secretKey === 'SKTESTOFFLINE0001')
+    check('费用中心凭据：指纹只露 AK 首尾、SK 仅长度', resolved?.hint.secretKeyLength === 17 && !JSON.stringify(resolved.hint).includes('SKTESTOFFLINE0001'), JSON.stringify(resolved?.hint))
+    const billingState = await billingStatus({ config: billingConfig })
+    check('费用中心凭据：状态为已配置', billingState.configured === true && billingState.hint !== null)
+    await clearBillingCredentials({ config: billingConfig })
+    check('费用中心凭据：清除后回到未配置', (await billingStatus({ config: billingConfig })).configured === false)
+  } catch (error) {
+    if (error instanceof SeedreamError && error.code === 'POWERSHELL_MISSING') {
+      console.log('跳过费用中心凭据测试：本机没有可用的 PowerShell（见 lib/vault.js）')
+    } else {
+      check('费用中心凭据：往返', false, error instanceof Error ? error.message : String(error))
+    }
+  }
+
+  // —— 5. 界面路由：用 stub fetch 离线验证「保存 AK/SK → 验证 → 官方余额进状态」 ——
+  const realFetch = globalThis.fetch
+  const capturedRequests = []
+  try {
+    globalThis.fetch = async (url, init) => {
+      capturedRequests.push({ url: String(url), init })
+      return new Response(JSON.stringify({ ResponseMetadata: {}, Result: { AvailableBalance: '77.77', CashBalance: '70.00' } }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    }
+    resetBalanceCache()
+    const billingSave = await call(`${ROUTE_PREFIX}/billing`, {
+      method: 'POST',
+      body: JSON.stringify({ accessKey: 'AKTESTOFFLINE0001', secretKey: 'SKTESTOFFLINE0001' }),
+    })
+    const billingSavePayload = JSON.parse(billingSave.body)
+    check('余额路由：保存 AK/SK 并验证通过', billingSave.statusCode === 200 && billingSavePayload.verified === true, billingSave.body.slice(0, 160))
+    check('余额路由：打到费用中心正确端点', capturedRequests[0]?.url === 'https://billing.volcengineapi.com/?Action=QueryBalanceAcct&Version=2022-01-01', capturedRequests[0]?.url)
+    check('余额路由：请求方法与签名头正确', capturedRequests[0]?.init.method === 'POST' && String(capturedRequests[0]?.init.headers.Authorization).startsWith('HMAC-SHA256 Credential=AKTESTOFFLINE0001/'), JSON.stringify(Object.keys(capturedRequests[0]?.init.headers ?? {})))
+    const stateWithBalance = JSON.parse((await call(`${ROUTE_PREFIX}/state`)).body)
+    check('余额路由：官方余额进入状态', stateWithBalance.balance.mode === 'official' && stateWithBalance.balance.official.available === '77.77', JSON.stringify(stateWithBalance.balance.mode))
+    check('余额路由：本地预算同时可用', stateWithBalance.balance.budget !== null, JSON.stringify(stateWithBalance.balance.budget?.remaining))
+
+    // 失败路径：403 → 不应把失败当成 0，而是保留错误信息
+    globalThis.fetch = async () => new Response(JSON.stringify({ ResponseMetadata: { Error: { Code: 'AccessDenied', Message: 'no permission' } } }), { status: 403 })
+    resetBalanceCache()
+    const failedView = JSON.parse((await call(`${ROUTE_PREFIX}/balance`, { method: 'POST', body: JSON.stringify({ refresh: true }) })).body)
+    check('余额路由：403 归类为鉴权失败', failedView.mode === 'official-error' && String(failedView.official.error).includes('AUTH_FAILED'), JSON.stringify(failedView.official.error))
+    check('余额路由：失败时不返回假的 0 余额', failedView.official.available === null, String(failedView.official.available))
+
+    const billingClear = await call(`${ROUTE_PREFIX}/billing`, { method: 'POST', body: JSON.stringify({ clear: true }) })
+    check('余额路由：可删除 AK/SK', billingClear.statusCode === 200 && JSON.parse(billingClear.body).cleared === true)
+
+    // 精确擦除：上游异常若夹带 AK/SK，错误消息里也不能出现它们
+    const akFixture = 'AKTESTOFFLINE0001'
+    const skFixture = 'SKTESTOFFLINE0001'
+    globalThis.fetch = async () => { throw new TypeError(`connection failed while sending ${akFixture} / ${skFixture}`) }
+    try {
+      await queryBalance({ accessKey: akFixture, secretKey: skFixture, timeoutMs: 5_000 })
+      check('费用中心：异常擦除', false, '本应抛出异常')
+    } catch (error) {
+      check('费用中心：异常里的 AK/SK 被抹掉', !String(error.message).includes(akFixture) && !String(error.message).includes(skFixture), error.message)
+    }
+  } catch (error) {
+    if (error instanceof SeedreamError && error.code === 'POWERSHELL_MISSING') {
+      console.log('跳过余额路由测试：本机没有可用的 PowerShell（见 lib/vault.js）')
+    } else {
+      check('余额路由：端到端', false, error instanceof Error ? error.message : String(error))
+    }
+  } finally {
+    globalThis.fetch = realFetch
+    resetBalanceCache()
+  }
 
   // 按来源删除：凭据服务里的 Key（明文来源）也能一键删掉
   const credsDelete = await call(`${ROUTE_PREFIX}/key`, { method: 'POST', body: JSON.stringify({ clear: true, source: 'credentials' }) })

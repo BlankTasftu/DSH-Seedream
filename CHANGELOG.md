@@ -2,6 +2,30 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 风格，版本号遵循语义化版本。
 
+## [0.4.0] — 2026-10-10
+
+### 新增：可用余额
+
+- **官方余额**（火山引擎费用中心 OpenAPI）
+  - 实现 Volcengine Signature V4（HMAC-SHA256）签名 + `POST billing.volcengineapi.com/?Action=QueryBalanceAcct&Version=2022-01-01`
+  - 签名与官方 Python SDK `signv4.py` 做**固定向量交叉验证**（`test/signv4_reference.py`），签名值逐字节一致
+  - 方舟数据面查不到余额（实测 10 个候选路径全部 404），因此余额走费用中心、用独立的子账号 AK/SK
+  - AK/SK 与 API Key 同级保密：**独立 DPAPI 金库**（`billing.vault.json`）、只回显 AK 首尾 4 位与 SK 长度、
+    **SK 任何字符都不显示**、按值精确擦除（上游异常夹带也会被抹掉）
+  - 缓存 10 分钟 + 手动刷新 30 秒节流：界面 5 秒轮询不会反复打费用中心
+  - 失败不伪造数据：查询失败时保留上一次成功值并标注 stale，同时给出错误原因（如权限不足）
+- **本地预算**（零凭据兜底）：`已充值 − 台账累计`，附近 7 天日均与预计可用天数；存 `budget.json`，
+  也可用配置 `budgetTotal` / `budgetSince`（配置优先级更高，界面会提示）
+- **新工具 `seedream_balance`**；`seedream_status` 增加一行余额摘要；CLI 新增 `balance [--refresh]`
+- **界面新增「可用余额」区块**：余额大字 + 官方明细（现金/信控/冻结）+ 刷新、AK/SK 保存并验证/删除、预算设置；
+  徽标在有官方余额时直接显示「余额 ¥x」
+
+### 变更
+
+- 界面路由从 5 条增至 8 条：新增 `POST /balance`、`POST /billing`、`POST /budget`（同样过三层信任栅栏，写操作限本机）
+- 离线自检 130 → **162 项**（新增签名向量、余额解析、预算数学、AK/SK 金库往返与擦除、余额路由端到端）
+- 测试改为完全封闭：所有落盘路径（台账/价表/金库/预算）都指向临时目录，不再写入用户的 `DSH_HOME`
+
 ## [0.3.0] — 2026-10-10
 
 首个公开版本。

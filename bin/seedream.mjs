@@ -22,6 +22,7 @@ import { ArkClient } from '../lib/ark.js'
 import { runSeedream } from '../lib/tools.js'
 import { SeedreamError } from '../lib/errors.js'
 import { buildUsageView, recostLedger, renderUsage } from '../lib/usage.js'
+import { buildBalanceView, renderBalanceView } from '../lib/balance.js'
 import { describePriceTable, formatMoney, loadPrices, priceFilePathOf, readPriceFile, writePriceFile } from '../lib/pricing.js'
 import { ledgerPathOf } from '../lib/ledger.js'
 
@@ -66,6 +67,7 @@ const USAGE = `seedream CLI
   generate --prompt P [--model TIER] [--size S] [--count N] [--out DIR] [--name NAME]
   usage [--period today|week|month|all] [--detail]
                                              用量与费用统计（金额按本地价表估算）
+  balance [--refresh]                        可用余额：官方（需 AK/SK）优先，本地预算兜底
   price show                                 查看生效价表与来源
   price set --tier TIER --price N [--high N] [--threshold N] [--currency CNY] [--note "..."]
                                              写入单价（元/张），--high 为超过阈值像素的高价档，
@@ -201,6 +203,14 @@ async function commandGenerate(config, flags) {
   for (const note of value.notes) console.log(`  提示：${note}`)
 }
 
+async function commandBalance(config, flags) {
+  const view = await buildBalanceView({ config, refresh: flags.refresh === true })
+  console.log(renderBalanceView(view))
+  if (view.billing.configured !== true) {
+    console.log('\n提示：填 AK/SK 才能看到账户真实余额（界面「可用余额」区块，或环境变量 VOLC_ACCESSKEY / VOLC_SECRETKEY）。')
+  }
+}
+
 async function commandUsage(config, flags, rest = []) {
   const action = rest.find((token) => !token.startsWith('--'))
   if (action === 'recost') {
@@ -296,6 +306,9 @@ async function main() {
       return
     case 'usage':
       await commandUsage(config, flags, rest)
+      return
+    case 'balance':
+      await commandBalance(config, flags)
       return
     case 'price':
       await commandPrice(config, flags, rest.find((token) => !token.startsWith('--')) ?? 'show')

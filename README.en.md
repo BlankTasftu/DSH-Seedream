@@ -6,10 +6,13 @@ A [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) plugin tha
 
 The agent calls it directly; you also get a **live cost badge** in the DSH UI, and a panel to manage the API key and unit prices.
 
-- **4 agent tools**: `seedream_generate`, `seedream_edit`, `seedream_status`, `seedream_usage`
+- **5 agent tools**: `seedream_generate`, `seedream_edit`, `seedream_status`, `seedream_usage`, `seedream_balance`
 - **Live billing**: every generation reports billed images + estimated cost; totals by today / 7 days / month / all
-- **GUI management**: replace or delete the API key (stored via Windows DPAPI), edit unit prices, recompute history
-- **No plaintext key at rest**: DPAPI ciphertext only; no response ever contains the key ([SECURITY.md](SECURITY.md))
+- **Available balance**: official balance via the Volcengine Billing Center OpenAPI (`QueryBalanceAcct`, needs a
+  read-only sub-account AK/SK), with a local-budget fallback (`top-up − ledger spend`, plus daily-burn estimate)
+- **GUI management**: replace or delete the API key (stored via Windows DPAPI), edit unit prices, recompute history,
+  manage AK/SK and budget
+- **No plaintext secrets at rest**: both the API key and AK/SK live in DPAPI-encrypted vaults ([SECURITY.md](SECURITY.md))
 - **Zero runtime dependencies** (`@deepseek-ai/schemastery` is optional)
 
 > Ark bills **per returned image**, but **unit prices are only visible in the Ark console and are not returned by the API**.
@@ -86,10 +89,21 @@ node bin/seedream.mjs price set --tier 5.0-pro --price 0.32 --high 0.95 --note "
 Both tiers reject `sequential_image_generation`, so `count > 1` becomes serial single calls.
 Ark's image API has **no** mask inpainting: edits are whole-image redraws driven by the instruction.
 
+## Available balance
+
+| Mode | Source | Requirement |
+| --- | --- | --- |
+| **Official** | Volcengine Billing Center `QueryBalanceAcct` (SigV4 signed) | a **sub-account AK/SK** with the `BillingCenterReadOnlyAccess` policy |
+| **Local budget** | `top-up − ledger spend` + daily burn rate | none |
+
+The Ark data-plane API key cannot read the balance (10 candidate endpoints all return 404), so the official balance
+uses the Billing Center OpenAPI. Set it up in the badge panel → **Available balance** → paste AK/SK → *Save and verify*.
+AK/SK are stored as DPAPI ciphertext, only the AK's first/last 4 chars are echoed, and the SK is never displayed.
+
 ## Testing
 
 ```bash
-node test/offline.mjs   # 130 offline checks: no network, no billing
+node test/offline.mjs   # 162 offline checks: no network, no billing
 ```
 
 ## License
