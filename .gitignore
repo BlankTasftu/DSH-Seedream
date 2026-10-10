@@ -1,0 +1,29 @@
+# 依赖与构建产物
+node_modules/
+*.log
+
+# —— 绝不提交任何密钥/用量/价表/产出 ——
+*.vault.json
+*.vault.json.tmp
+*.vault.json.bak
+usage.jsonl
+usage.jsonl.bak
+prices.json
+prices.json.tmp
+images/
+*.png
+*.jpg
+*.jpeg
+*.webp
+!docs/**/*.png
+
+# 编辑器 / 系统
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 本地临时
+*.tmp
+.tmp/

@@ -1,0 +1,44 @@
+# ============================================================================
+# dsh-seedream —— DSH bundle patch
+# ============================================================================
+# 把 Seedream（火山方舟）图片生成插件挂进 profile 配置树。
+# 安装（本地开发目录）：
+#   dsh plugin --profile desktop add link:<本目录绝对路径>
+# 或直接用 DSH 的插件管理器安装本目录。
+#
+# 下面 config 里只列了最常改的字段；完整字段与默认值见 lib/schema.js。
+# 注意：不要在这里写 API Key —— 明文配置会被记录在 profile 里。
+# 推荐用 bin/seedream.mjs 的 key set 写入 DPAPI 金库。
+# ============================================================================
+
+- insert:
+    - id: dsh-seedream
+      name: dsh-seedream
+      config:
+        defaultModel: 5.0-pro
+        editModel: 5.0-pro
+        outputDir: images/seedream
+        watermark: false
+        maxImagesPerCall: 4
+        # apiKeyEnv: ARK_API_KEY
+        # vaultPath: ''
+        # baseUrl: https://ark.cn-beijing.volces.com/api/v3
+        # model5: doubao-seedream-5-0-flash-260915
+        # model5Pro: doubao-seedream-5-0-pro-260628
+        # requestTimeoutMs: 300000
+        # rateLimitRetries: 2
+        # rateLimitBackoffMs: 15000
+        # allowOutsideCwd: false
+        # powershellPath: ''
+        # promptSection: true
+        # --- 用量与费用（金额是按本地价表的估算，不是官方账单）---
+        # ledgerPath: ''                 # 用量台账，留空用 <DSH_HOME>/seedream/usage.jsonl
+        # priceFilePath: ''              # 价格文件，留空用 <DSH_HOME>/seedream/prices.json
+        # priceCurrency: CNY
+        # price5: ''                     # 5.0 档单价（元/张），留空 = 未配置
+        # price5High: ''                 # 超过阈值像素的高价档
+        # price5Pro: ''
+        # price5ProHigh: ''
+        # priceHighPixelThreshold: 2610000
+        # --- 客户端界面（实时计费徽标 + API/单价管理面板）---
+        # uiBadgePosition: bottom-left   # bottom-left / bottom-right / top-left / top-right

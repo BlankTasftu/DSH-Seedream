@@ -1,0 +1,65 @@
+{
+  "name": "dsh-seedream",
+  "version": "0.3.0",
+  "description": "DSH 的 Seedream（火山方舟 Ark）图片 / 图像素材生成插件：Agent 工具生成与编辑、用量费用统计、界面内实时计费徽标与 API/单价管理；API Key 以 Windows DPAPI 密文保管，不落明文",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "seedream",
+    "volcengine",
+    "ark",
+    "doubao",
+    "image-generation",
+    "text-to-image"
+  ],
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": {
+      "default": "./lib/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "bin": {
+    "seedream": "bin/seedream.mjs"
+  },
+  "files": [
+    "lib",
+    "bin",
+    "test",
+    "cordis.patch.yml",
+    "README.md",
+    "README.en.md",
+    "SECURITY.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "node test/offline.mjs",
+    "status": "node bin/seedream.mjs key status",
+    "models": "node bin/seedream.mjs models",
+    "usage": "node bin/seedream.mjs usage"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "optionalDependencies": {
+    "@deepseek-ai/schemastery": "^3.18.1"
+  },
+  "engines": {
+    "node": "^22.19 || >=24"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/BlankTasftu/DSH-Seedream.git"
+  },
+  "homepage": "https://github.com/BlankTasftu/DSH-Seedream#readme",
+  "bugs": {
+    "url": "https://github.com/BlankTasftu/DSH-Seedream/issues"
+  },
+  "author": "BlankTasftu",
+  "license": "MIT"
+}
