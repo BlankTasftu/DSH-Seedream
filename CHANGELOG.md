@@ -40,7 +40,7 @@
 - 界面路由 8 → **9 条**（新增 `POST /model`，同样过三层信任栅栏、写操作限本机）
 - 离线自检 162 → **185 项**（新增档位优先级、选择文件读写与清除、`/model` 路由、旧指纹修正、
   历史档位名归一、配置旧键兼容）
-- 新增 **`test/client-dom.mjs`（16 项）**：用最小 DOM 桩跑真实 `lib/client.js`，验证选择器确实嵌进
+- 新增 **`test/client-dom.mjs`（21 项）**：用最小 DOM 桩跑真实 `lib/client.js`，验证选择器插在控制行最前面（模型选择左侧）、
   `[class*="standardControls"]`、模型行隐藏时退到权限行、无输入框时回退浮层、切换档位会 `POST /model {tier}`、
   选「默认」会 `POST {clear:true}`、`uiModelPicker:false` 时隐藏
 

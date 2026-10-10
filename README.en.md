@@ -104,7 +104,7 @@ AK/SK are stored as DPAPI ciphertext, only the AK's first/last 4 chars are echoe
 
 ```bash
 node test/offline.mjs    # 185 offline checks: no network, no billing
-node test/client-dom.mjs # 16 DOM checks: model picker inline placement + POST /model
+node test/client-dom.mjs # 21 DOM checks: picker sits left of the model control, no layout override, width convergence, POST /model
 ```
 
 ## License

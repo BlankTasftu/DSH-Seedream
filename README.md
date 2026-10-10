@@ -172,7 +172,7 @@ node bin/seedream.mjs price clear
 - 记账文件：`<DSH_HOME>/seedream/usage.jsonl`（一行一次调用：时间、档位、画幅、像素、张数、tokens、当时单价与金额）
 - 价表文件：`<DSH_HOME>/seedream/prices.json`；单价 = 基准档 + 「超过阈值像素」的高价档（默认阈值 261 万像素）
 - **改价不改历史**：台账金额是当时的估算；填价后用 `usage recost` 按当前价表补齐历史（自动备份 `.bak`）
-- 也可在 profile 配置里写死单价：`price5` / `price5High` / `price5Pro` / `price5ProHigh` / `priceHighPixelThreshold` / `priceCurrency`
+- 也可在 profile 配置里写死单价：`price5Pro` / `price5ProHigh` / `price5Flash` / `price5FlashHigh` / `priceHighPixelThreshold` / `priceCurrency`（旧键 `price5` / `price5High` 仍可读）
   （优先级：插件配置 > prices.json > 内置默认=未配置）
 
 ## 7. 可用余额
@@ -259,7 +259,7 @@ Agent 侧直接问「我还有多少余额」即可（会调 `seedream_balance`�
 | `vaultPath` | `''` | 金库路径，留空用 `<DSH_HOME>/seedream/ark-key.vault.json` |
 | `baseUrl` | `https://ark.cn-beijing.volces.com/api/v3` | 网关（国际站 `https://ark.ap-southeast.bytepluses.com/api/v3`） |
 | `defaultModel` / `editModel` | `5.0-pro` | 默认生成 / 编辑档位 |
-| `model5` / `model5Pro` | 见第 3 节 | Model ID 覆盖（也支持 `ep-xxxx` 接入点） |
+| `model5Pro` / `model5Flash` | 见第 3 节 | Model ID 覆盖（也支持 `ep-xxxx` 接入点）；**旧键 `model5` 仍可读** |
 | `outputDir` | `images/seedream` | 产出目录（相对会话工作目录） |
 | `allowOutsideCwd` | `false` | 是否允许产出目录/参考图逃出工作目录 |
 | `requestTimeoutMs` | `300000` | 同步长请求超时（方舟无轮询） |
@@ -269,7 +269,7 @@ Agent 侧直接问「我还有多少余额」即可（会调 `seedream_balance`�
 | `powershellPath` | `''` | DPAPI 用的 PowerShell 路径，留空自动探测 |
 | `promptSection` | `true` | 是否注册能力提示段 |
 | `ledgerPath` / `priceFilePath` | `''` | 台账 / 价表路径，留空用 DSH_HOME 下默认位置 |
-| `price5` / `price5High` / `price5Pro` / `price5ProHigh` | `''` | 单价（元/张），留空 = 未配置 |
+| `price5Pro` / `price5ProHigh` / `price5Flash` / `price5FlashHigh` | `''` | 单价（元/张），留空 = 未配置；**旧键 `price5` / `price5High` 仍可读** |
 | `priceHighPixelThreshold` | `2610000` | 高清档像素阈值 |
 | `priceCurrency` | `CNY` | 计价币种（仅展示） |
 | `uiBadgePosition` | `bottom-left` | 徽标初始角落 |
@@ -289,7 +289,7 @@ Agent 侧直接问「我还有多少余额」即可（会调 `seedream_balance`�
 | `MISSING_CREDENTIAL` | 三个来源都没有 Key。用界面徽标或 `key set` 写入金库 |
 | `AUTH_FAILED` (401/403) | Key 无效/过期/被停用 → 重新写入 |
 | `MODEL_UNAVAILABLE` + `ModelNotOpen` | 模型存在但账号未开通 → 去方舟控制台开通 |
-| `MODEL_UNAVAILABLE` + `NotFound` | Model ID 不对或该档位已下线 → `probe` 验证，或改 `model5`/`model5Pro` |
+| `MODEL_UNAVAILABLE` + `NotFound` | Model ID 不对或该档位已下线 → `probe` 验证，或改 `model5Pro` / `model5Flash` |
 | `RATE_LIMITED` (429) | 图像模型按 IPM 限流；默认退避重试 2 次，可调 `rateLimitRetries` / `rateLimitBackoffMs` |
 | `SENSITIVE_CONTENT` | 输入或输出被审核拦截 → 改写提示词（不重试） |
 | `TIMEOUT` | 同步接口耗时长 → 调大 `requestTimeoutMs`，或减少张数/参考图 |
@@ -319,7 +319,7 @@ node test/offline.mjs   # 185 项离线自检：不联网、不花钱
                         # 配置/档位/画幅钳制/路径逃逸/图片嗅探/工具 schema 与渲染/
                         # 价表分档/台账汇总/recost/界面路由与信任栅栏/指纹与擦除/DPAPI 金库往返/
                         # SigV4 签名（与官方实现交叉验证的固定向量）/余额解析/预算数学/档位优先级与选择文件/历史档位名归一
-node test/client-dom.mjs # 16 项客户端 DOM 自检：用最小 DOM 桩验证「选择器嵌进控制行」与「切换档位会 POST /model」
+node test/client-dom.mjs # 21 项客户端 DOM 自检：用最小 DOM 桩跑真实 client.js，验证「插在模型选择左侧」「不改 DSH 行间距」「select 宽度收敛」「切换档位 POST /model」
 ```
 
 ```
