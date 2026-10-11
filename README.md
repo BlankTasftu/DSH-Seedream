@@ -1,5 +1,7 @@
 # DSH-Seedream
 
+本插件已弃用，停止更新维护，您可以根据自己的需求自行修改更新自用
+
 把 **Seedream（火山方舟 Ark）** 接入 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的图片与图像素材生成插件。
 
 Agent 会自己调用它出图；你也可以在 DSH 界面左下角看到一个**实时计费徽标**，点开就能管理 API Key 与单价。
